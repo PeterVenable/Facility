@@ -1,13 +1,13 @@
 .vs/
 bin/
-cake/
 obj/
-packages/
 release/
 
 *.cache
+*.log
 *.ncrunchproject
 *.ncrunchsolution
 *.user
+launchSettings.json
 nCrunchTemp*
-*.log
+_ReSharper*

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Facility.Definition.CodeGen;
@@ -13,13 +13,21 @@ namespace Facility.Definition.Fsd
 		/// <summary>
 		/// Generates an FSD file for a service definition.
 		/// </summary>
-		protected override CodeGenOutput GenerateOutputCore(ServiceInfo service)
+		/// <param name="settings">The settings.</param>
+		/// <returns>The number of updated files.</returns>
+		public static int GenerateFsd(FsdGeneratorSettings settings) =>
+			FileGenerator.GenerateFiles(new FsdGenerator { GeneratorName = nameof(FsdGenerator) }, settings);
+
+		/// <summary>
+		/// Generates an FSD file for a service definition.
+		/// </summary>
+		public override CodeGenOutput GenerateOutput(ServiceInfo service)
 		{
-			var output = CreateNamedText($"{service.Name}.fsd", code =>
+			var output = CreateFile($"{service.Name}.fsd", code =>
 			{
 				if (!string.IsNullOrWhiteSpace(GeneratorName))
 				{
-					code.WriteLine("// " + CodeGenUtility.GetCodeGenComment(GeneratorName));
+					code.WriteLine("// " + CodeGenUtility.GetCodeGenComment(GeneratorName!));
 					code.WriteLine();
 				}
 
@@ -33,8 +41,7 @@ namespace Facility.Definition.Fsd
 				{
 					foreach (var member in service.Members)
 					{
-						var method = member as ServiceMethodInfo;
-						if (method != null)
+						if (member is ServiceMethodInfo method)
 						{
 							code.WriteLineSkipOnce();
 							WriteSummaryAndAttributes(code, method);
@@ -48,8 +55,7 @@ namespace Facility.Definition.Fsd
 								remarks.AddRange(new[] { "", $"# {method.Name}", "" }.Concat(method.Remarks));
 						}
 
-						var dto = member as ServiceDtoInfo;
-						if (dto != null)
+						if (member is ServiceDtoInfo dto)
 						{
 							code.WriteLineSkipOnce();
 							WriteSummaryAndAttributes(code, dto);
@@ -61,8 +67,7 @@ namespace Facility.Definition.Fsd
 								remarks.AddRange(new[] { "", $"# {dto.Name}", "" }.Concat(dto.Remarks));
 						}
 
-						var enumInfo = member as ServiceEnumInfo;
-						if (enumInfo != null)
+						if (member is ServiceEnumInfo enumInfo)
 						{
 							code.WriteLineSkipOnce();
 							WriteSummaryAndAttributes(code, enumInfo);
@@ -74,8 +79,7 @@ namespace Facility.Definition.Fsd
 								remarks.AddRange(new[] { "", $"# {enumInfo.Name}", "" }.Concat(enumInfo.Remarks));
 						}
 
-						var errorSet = member as ServiceErrorSetInfo;
-						if (errorSet != null)
+						if (member is ServiceErrorSetInfo errorSet)
 						{
 							code.WriteLineSkipOnce();
 							WriteSummaryAndAttributes(code, errorSet);
@@ -89,13 +93,19 @@ namespace Facility.Definition.Fsd
 					}
 				}
 
-				foreach (string remark in remarks)
+				foreach (var remark in remarks)
 					code.WriteLine(remark);
 			});
 			return new CodeGenOutput(output);
 		}
 
-		private void WriteSummaryAndAttributes(CodeWriter code, IServiceElementInfo info)
+		/// <summary>
+		/// The generator writes output to a single file.
+		/// </summary>
+		public override bool SupportsSingleOutput => true;
+
+		private void WriteSummaryAndAttributes<T>(CodeWriter code, T info)
+			where T : ServiceElementWithAttributesInfo, IServiceHasSummary
 		{
 			WriteSummary(code, info.Summary);
 			WriteAttributes(code, info.Attributes);
@@ -115,7 +125,7 @@ namespace Facility.Definition.Fsd
 
 		private void WriteAttribute(CodeWriter code, ServiceAttributeInfo attribute)
 		{
-			string parameters = string.Join(", ", attribute.Parameters.Select(RenderAttributeParameter));
+			var parameters = string.Join(", ", attribute.Parameters.Select(RenderAttributeParameter));
 			if (parameters.Length != 0)
 				parameters = $"({parameters})";
 			code.WriteLine($"[{attribute.Name}{parameters}]");
@@ -136,26 +146,18 @@ namespace Facility.Definition.Fsd
 
 		private string RenderAttributeValueEscape(Match match)
 		{
-			char ch = match.Value[0];
-			switch (ch)
+			var ch = match.Value[0];
+			return ch switch
 			{
-			case '\\':
-				return @"\\";
-			case '"':
-				return @"\""";
-			case '\b':
-				return @"\b";
-			case '\f':
-				return @"\f";
-			case '\n':
-				return @"\n";
-			case '\r':
-				return @"\r";
-			case '\t':
-				return @"\t";
-			default:
-				return $@"\u{(int) ch:x4}";
-			}
+				'\\' => @"\\",
+				'"' => @"\""",
+				'\b' => @"\b",
+				'\f' => @"\f",
+				'\n' => @"\n",
+				'\r' => @"\r",
+				'\t' => @"\t",
+				_ => $@"\u{(int) ch:x4}",
+			};
 		}
 
 		private void WriteFields(CodeWriter code, IEnumerable<ServiceFieldInfo> fields)
@@ -163,8 +165,14 @@ namespace Facility.Definition.Fsd
 			foreach (var field in fields)
 			{
 				code.WriteLineSkipOnce();
-				WriteSummaryAndAttributes(code, field);
-				code.WriteLine($"{field.Name}: {field.TypeName};");
+				WriteSummary(code, field.Summary);
+
+				var attributes = field.Attributes;
+				if (field.IsRequired)
+					attributes = attributes.Where(x => x.Name != "required").ToList();
+				WriteAttributes(code, attributes);
+
+				code.WriteLine($"{field.Name}: {field.TypeName}{(field.IsRequired ? "!" : "")};");
 			}
 		}
 
@@ -188,7 +196,7 @@ namespace Facility.Definition.Fsd
 			}
 		}
 
-		static readonly Regex s_unquotedAttributeValueRegex = new Regex(@"^[0-9a-zA-Z.+_-]+$");
-		static readonly Regex s_escapeAttributeValueRegex = new Regex(@"[\\""\u0000-\u001F]");
+		private static readonly Regex s_unquotedAttributeValueRegex = new Regex(@"^[0-9a-zA-Z.+_-]+$");
+		private static readonly Regex s_escapeAttributeValueRegex = new Regex(@"[\\""\u0000-\u001F]");
 	}
 }

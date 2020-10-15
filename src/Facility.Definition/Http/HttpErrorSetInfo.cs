@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Facility.Definition.Http
@@ -6,7 +6,7 @@ namespace Facility.Definition.Http
 	/// <summary>
 	/// The HTTP mapping of an error set.
 	/// </summary>
-	public sealed class HttpErrorSetInfo
+	public sealed class HttpErrorSetInfo : HttpElementInfo
 	{
 		/// <summary>
 		/// The error set.
@@ -18,13 +18,18 @@ namespace Facility.Definition.Http
 		/// </summary>
 		public IReadOnlyList<HttpErrorInfo> Errors { get; }
 
+		/// <summary>
+		/// The children of the element, if any.
+		/// </summary>
+		public override IEnumerable<HttpElementInfo> GetChildren() => Errors;
+
 		internal HttpErrorSetInfo(ServiceErrorSetInfo errorSetInfo)
 		{
 			ServiceErrorSet = errorSetInfo;
 
-			var httpParameter = errorSetInfo.GetHttpParameters().FirstOrDefault();
-			if (httpParameter != null)
-				throw httpParameter.CreateInvalidHttpParameterException();
+			var parameter = GetHttpParameters(errorSetInfo).FirstOrDefault();
+			if (parameter != null)
+				AddInvalidHttpParameterError(parameter);
 
 			Errors = errorSetInfo.Errors.Select(x => new HttpErrorInfo(x)).ToList();
 		}

@@ -1,31 +1,37 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Facility.Definition
 {
 	/// <summary>
 	/// A field of a DTO.
 	/// </summary>
-	public sealed class ServiceFieldInfo : IServiceElementInfo
+	public sealed class ServiceFieldInfo : ServiceElementWithAttributesInfo, IServiceHasName, IServiceHasSummary
 	{
 		/// <summary>
 		/// Creates a field.
 		/// </summary>
-		public ServiceFieldInfo(string name, string typeName, IEnumerable<ServiceAttributeInfo> attributes = null, string summary = null, NamedTextPosition position = null)
+		public ServiceFieldInfo(string name, string typeName, IEnumerable<ServiceAttributeInfo>? attributes = null, string? summary = null, params ServicePart[] parts)
+			: base(attributes, parts)
 		{
-			if (name == null)
-				throw new ArgumentNullException(nameof(name));
-			if (typeName == null)
-				throw new ArgumentNullException(nameof(typeName));
-
-			Name = name;
-			TypeName = typeName;
-			Attributes = attributes.ToReadOnlyList();
+			Name = name ?? throw new ArgumentNullException(nameof(name));
+			TypeName = typeName ?? throw new ArgumentNullException(nameof(typeName));
 			Summary = summary ?? "";
-			Position = position;
 
-			ServiceDefinitionUtility.ValidateName(Name, Position);
-			ServiceDefinitionUtility.ValidateTypeName(TypeName, Position);
+			ValidateName();
+
+			var requiredAttributes = GetAttributes("required");
+			if (requiredAttributes.Count > 1)
+				AddValidationError(ServiceDefinitionUtility.CreateDuplicateAttributeError(requiredAttributes[1]));
+			var requiredAttribute = requiredAttributes.Count == 0 ? null : requiredAttributes[0];
+			if (requiredAttribute != null)
+			{
+				IsRequired = true;
+
+				foreach (var requiredParameter in requiredAttribute.Parameters)
+					AddValidationError(ServiceDefinitionUtility.CreateUnexpectedAttributeParameterError(requiredAttribute.Name, requiredParameter));
+			}
 		}
 
 		/// <summary>
@@ -39,18 +45,15 @@ namespace Facility.Definition
 		public string TypeName { get; }
 
 		/// <summary>
-		/// The attributes of the field.
-		/// </summary>
-		public IReadOnlyList<ServiceAttributeInfo> Attributes { get; }
-
-		/// <summary>
 		/// The summary of the field.
 		/// </summary>
 		public string Summary { get; }
 
 		/// <summary>
-		/// The position of the field in the definition.
+		/// True if the field is required.
 		/// </summary>
-		public NamedTextPosition Position { get; }
+		public bool IsRequired { get; }
+
+		private protected override IEnumerable<ServiceElementInfo> GetExtraChildrenCore() => Enumerable.Empty<ServiceElementInfo>();
 	}
 }

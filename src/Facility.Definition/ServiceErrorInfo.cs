@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Facility.Definition
@@ -6,22 +6,18 @@ namespace Facility.Definition
 	/// <summary>
 	/// An error of an error set.
 	/// </summary>
-	public sealed class ServiceErrorInfo : IServiceElementInfo
+	public sealed class ServiceErrorInfo : ServiceElementWithAttributesInfo, IServiceHasName, IServiceHasSummary
 	{
 		/// <summary>
 		/// Creates an error.
 		/// </summary>
-		public ServiceErrorInfo(string name, IEnumerable<ServiceAttributeInfo> attributes = null, string summary = null, NamedTextPosition position = null)
+		public ServiceErrorInfo(string name, IEnumerable<ServiceAttributeInfo>? attributes, string? summary, params ServicePart[] parts)
+			: base(attributes, parts)
 		{
-			if (name == null)
-				throw new ArgumentNullException(nameof(name));
-
-			Name = name;
-			Attributes = attributes.ToReadOnlyList();
+			Name = name ?? throw new ArgumentNullException(nameof(name));
 			Summary = summary ?? "";
-			Position = position;
 
-			ServiceDefinitionUtility.ValidateName(Name, Position);
+			ValidateName();
 		}
 
 		/// <summary>
@@ -30,18 +26,10 @@ namespace Facility.Definition
 		public string Name { get; }
 
 		/// <summary>
-		/// The attributes of the error.
-		/// </summary>
-		public IReadOnlyList<ServiceAttributeInfo> Attributes { get; }
-
-		/// <summary>
 		/// The summary of the error.
 		/// </summary>
 		public string Summary { get; }
 
-		/// <summary>
-		/// The position of the error in the definition.
-		/// </summary>
-		public NamedTextPosition Position { get; }
+		private protected override IEnumerable<ServiceElementInfo> GetExtraChildrenCore() => Attributes;
 	}
 }

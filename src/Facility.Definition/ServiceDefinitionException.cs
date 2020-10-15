@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 
 namespace Facility.Definition
 {
@@ -10,29 +11,33 @@ namespace Facility.Definition
 		/// <summary>
 		/// Creates an exception.
 		/// </summary>
-		public ServiceDefinitionException(string error, NamedTextPosition position = null, Exception innerException = null)
+		public ServiceDefinitionException(IEnumerable<ServiceDefinitionError> errors, Exception? innerException = null)
 			: base("", innerException)
 		{
-			if (error == null)
-				throw new ArgumentNullException(nameof(error));
+			if (errors == null)
+				throw new ArgumentNullException(nameof(errors));
 
-			Error = error;
-			Position = position;
+			Errors = errors.ToReadOnlyList();
+
+			if (Errors.Count == 0)
+				throw new ArgumentException("There must be at least one error.", nameof(errors));
 		}
 
 		/// <summary>
-		/// The error message.
+		/// The errors.
 		/// </summary>
-		public string Error { get; }
+		public IReadOnlyList<ServiceDefinitionError> Errors { get; }
 
 		/// <summary>
-		/// The position where the error took place, if any.
+		/// The exception message, which displays the file name, line number, column number, and error message of the first error.
 		/// </summary>
-		public NamedTextPosition Position { get; }
-
-		/// <summary>
-		/// The exception message, which displays the file name, line number, column number, and error message.
-		/// </summary>
-		public override string Message => Position != null ? $"{Position}: {Error}" : Error;
+		public override string Message
+		{
+			get
+			{
+				var firstError = Errors[0];
+				return firstError.Position != null ? $"{firstError.Position}: {firstError.Message}" : firstError.Message;
+			}
+		}
 	}
 }

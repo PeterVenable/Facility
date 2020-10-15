@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 
 namespace Facility.Definition.CodeGen
@@ -29,12 +29,12 @@ namespace Facility.Definition.CodeGen
 		/// <summary>
 		/// The text written on the line before a block (default "{", null for none).
 		/// </summary>
-		public string BlockBeforeText { get; set; }
+		public string? BlockBeforeText { get; set; }
 
 		/// <summary>
 		/// The text written on the line after a block (default "}", null for none).
 		/// </summary>
-		public string BlockAfterText { get; set; }
+		public string? BlockAfterText { get; set; }
 
 		/// <summary>
 		/// The text writer.
@@ -46,7 +46,7 @@ namespace Facility.Definition.CodeGen
 		/// </summary>
 		public IDisposable Indent()
 		{
-			bool wasWriteLineSkipped = m_wasWriteLineSkipped;
+			var wasWriteLineSkipped = m_wasWriteLineSkipped;
 			m_wasWriteLineSkipped = false;
 			m_indentDepth += 1;
 
@@ -60,27 +60,21 @@ namespace Facility.Definition.CodeGen
 		/// <summary>
 		/// Writes a line of text before and after the indented scope.
 		/// </summary>
-		public IDisposable Block()
-		{
-			return Block(BlockBeforeText, BlockAfterText);
-		}
+		public IDisposable Block() => Block(BlockBeforeText, BlockAfterText);
 
 		/// <summary>
 		/// Writes a line of text before and after the indented scope.
 		/// </summary>
-		public IDisposable Block(string before)
-		{
-			return Block(before, BlockAfterText);
-		}
+		public IDisposable Block(string? before) => Block(before, BlockAfterText);
 
 		/// <summary>
 		/// Writes a line of text before and after the indented scope.
 		/// </summary>
-		public IDisposable Block(string before, string after)
+		public IDisposable Block(string? before, string? after)
 		{
 			if (before != null)
 				WriteLine(before);
-			IDisposable indent = Indent();
+			var indent = Indent();
 			return new Scope(() =>
 			{
 				indent.Dispose();
@@ -131,7 +125,7 @@ namespace Facility.Definition.CodeGen
 		{
 			if (m_isNewLine)
 			{
-				for (int i = 0; i < m_indentDepth; i++)
+				for (var i = 0; i < m_indentDepth; i++)
 					TextWriter.Write(IndentText);
 				m_isNewLine = false;
 			}
@@ -153,11 +147,11 @@ namespace Facility.Definition.CodeGen
 				}
 			}
 
-			Action m_action;
+			private Action? m_action;
 		}
 
-		int m_indentDepth;
-		bool m_isNewLine;
-		bool m_wasWriteLineSkipped;
+		private int m_indentDepth;
+		private bool m_isNewLine;
+		private bool m_wasWriteLineSkipped;
 	}
 }

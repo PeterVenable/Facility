@@ -1,11 +1,13 @@
-﻿using System.Net;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 
 namespace Facility.Definition.Http
 {
 	/// <summary>
 	/// The HTTP mapping of an error.
 	/// </summary>
-	public sealed class HttpErrorInfo
+	public sealed class HttpErrorInfo : HttpElementInfo
 	{
 		/// <summary>
 		/// The error.
@@ -22,13 +24,18 @@ namespace Facility.Definition.Http
 			ServiceError = errorInfo;
 			StatusCode = HttpStatusCode.InternalServerError;
 
-			foreach (var parameter in errorInfo.GetHttpParameters())
+			foreach (var parameter in GetHttpParameters(errorInfo))
 			{
 				if (parameter.Name == "code")
-					StatusCode = HttpAttributeUtility.ParseStatusCodeInteger(parameter);
-				else
-					throw parameter.CreateInvalidHttpParameterException();
+					StatusCode = TryParseStatusCodeInteger(parameter) ?? HttpStatusCode.InternalServerError;
+				else if (parameter.Name != "from")
+					AddInvalidHttpParameterError(parameter);
 			}
 		}
+
+		/// <summary>
+		/// The children of the element, if any.
+		/// </summary>
+		public override IEnumerable<HttpElementInfo> GetChildren() => Enumerable.Empty<HttpElementInfo>();
 	}
 }

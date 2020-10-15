@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 namespace Facility.Definition
@@ -21,42 +21,27 @@ namespace Facility.Definition
 		/// <summary>
 		/// Create a DTO type.
 		/// </summary>
-		public static ServiceTypeInfo CreateDto(ServiceDtoInfo dto)
-		{
-			return new ServiceTypeInfo(ServiceTypeKind.Dto, dto: dto);
-		}
+		public static ServiceTypeInfo CreateDto(ServiceDtoInfo dto) => new ServiceTypeInfo(ServiceTypeKind.Dto, dto: dto);
 
 		/// <summary>
 		/// Create an enumerated type.
 		/// </summary>
-		public static ServiceTypeInfo CreateEnum(ServiceEnumInfo @enum)
-		{
-			return new ServiceTypeInfo(ServiceTypeKind.Enum, @enum: @enum);
-		}
+		public static ServiceTypeInfo CreateEnum(ServiceEnumInfo @enum) => new ServiceTypeInfo(ServiceTypeKind.Enum, @enum: @enum);
 
 		/// <summary>
 		/// Create a service result type.
 		/// </summary>
-		public static ServiceTypeInfo CreateResult(ServiceTypeInfo valueType)
-		{
-			return new ServiceTypeInfo(ServiceTypeKind.Result, valueType: valueType);
-		}
+		public static ServiceTypeInfo CreateResult(ServiceTypeInfo valueType) => new ServiceTypeInfo(ServiceTypeKind.Result, valueType: valueType);
 
 		/// <summary>
 		/// Create an array type.
 		/// </summary>
-		public static ServiceTypeInfo CreateArray(ServiceTypeInfo valueType)
-		{
-			return new ServiceTypeInfo(ServiceTypeKind.Array, valueType: valueType);
-		}
+		public static ServiceTypeInfo CreateArray(ServiceTypeInfo valueType) => new ServiceTypeInfo(ServiceTypeKind.Array, valueType: valueType);
 
 		/// <summary>
 		/// Create a map type.
 		/// </summary>
-		public static ServiceTypeInfo CreateMap(ServiceTypeInfo valueType)
-		{
-			return new ServiceTypeInfo(ServiceTypeKind.Map, valueType: valueType);
-		}
+		public static ServiceTypeInfo CreateMap(ServiceTypeInfo valueType) => new ServiceTypeInfo(ServiceTypeKind.Map, valueType: valueType);
 
 		/// <summary>
 		/// The kind of type.
@@ -66,78 +51,78 @@ namespace Facility.Definition
 		/// <summary>
 		/// The DTO (when Kind is Dto).
 		/// </summary>
-		public ServiceDtoInfo Dto { get; }
+		public ServiceDtoInfo? Dto { get; }
 
 		/// <summary>
 		/// The enumerated type (when Kind is Enum).
 		/// </summary>
-		public ServiceEnumInfo Enum { get; }
+		public ServiceEnumInfo? Enum { get; }
 
 		/// <summary>
 		/// The value type (when Kind is Result, Array, or Map).
 		/// </summary>
-		public ServiceTypeInfo ValueType { get; }
+		public ServiceTypeInfo? ValueType { get; }
 
 		/// <summary>
 		/// The string form of the service type.
 		/// </summary>
 		public override string ToString()
 		{
-			switch (Kind)
+			return Kind switch
 			{
-			case ServiceTypeKind.Dto:
-				return Dto.Name;
-			case ServiceTypeKind.Enum:
-				return Enum.Name;
-			case ServiceTypeKind.Result:
-				return $"result<{ValueType}>";
-			case ServiceTypeKind.Array:
-				return $"{ValueType}[]";
-			case ServiceTypeKind.Map:
-				return $"map<{ValueType}>";
-			default:
-				return s_primitiveTuples.Where(x => x.Item1 == Kind).Select(x => x.Item2).Single();
-			}
+				ServiceTypeKind.Dto => Dto!.Name,
+				ServiceTypeKind.Enum => Enum!.Name,
+				ServiceTypeKind.Result => $"result<{ValueType}>",
+				ServiceTypeKind.Array => $"{ValueType}[]",
+				ServiceTypeKind.Map => $"map<{ValueType}>",
+				_ => s_primitives.Where(x => x.Kind == Kind).Select(x => x.Name).Single(),
+			};
 		}
 
-		internal static ServiceTypeInfo Parse(string text, Func<string, IServiceMemberInfo> findMember, NamedTextPosition position = null)
+		internal static ServiceTypeInfo? TryParse(string text, Func<string, ServiceMemberInfo?> findMember)
 		{
 			if (text == null)
 				throw new ArgumentNullException(nameof(text));
 
-			var primitiveTuple = s_primitiveTuples.FirstOrDefault(x => text == x.Item2);
-			if (primitiveTuple != null)
-				return CreatePrimitive(primitiveTuple.Item1);
+			var primitive = s_primitives.FirstOrDefault(x => text == x.Name);
+			if (primitive.Name != null)
+				return CreatePrimitive(primitive.Kind);
 
-			string resultValueType = TryPrefixSuffix(text, "result<", ">");
+			var resultValueType = TryPrefixSuffix(text, "result<", ">");
 			if (resultValueType != null)
-				return CreateResult(Parse(resultValueType, findMember, position));
-
-			string arrayValueType = TryPrefixSuffix(text, "", "[]");
-			if (arrayValueType != null)
-				return CreateArray(Parse(arrayValueType, findMember, position));
-
-			string mapValueType = TryPrefixSuffix(text, "map<", ">");
-			if (mapValueType != null)
-				return CreateMap(Parse(mapValueType, findMember, position));
-
-			if (findMember != null)
 			{
-				var member = findMember(text);
+				var valueType = TryParse(resultValueType, findMember);
+				return valueType == null ? null : CreateResult(valueType);
+			}
 
-				var dto = member as ServiceDtoInfo;
-				if (dto != null)
+			var arrayValueType = TryPrefixSuffix(text, "", "[]");
+			if (arrayValueType != null)
+			{
+				var valueType = TryParse(arrayValueType, findMember);
+				return valueType == null ? null : CreateArray(valueType);
+			}
+
+			var mapValueType = TryPrefixSuffix(text, "map<", ">");
+			if (mapValueType != null)
+			{
+				var valueType = TryParse(mapValueType, findMember);
+				return valueType == null ? null : CreateMap(valueType);
+			}
+
+			var member = findMember(text);
+			if (member != null)
+			{
+				if (member is ServiceDtoInfo dto)
 					return CreateDto(dto);
 
-				var @enum = member as ServiceEnumInfo;
-				if (@enum != null)
+				if (member is ServiceEnumInfo @enum)
 					return CreateEnum(@enum);
 			}
 
-			throw new ServiceDefinitionException($"Unknown field type '{text}'.", position);
+			return null;
 		}
 
-		private ServiceTypeInfo(ServiceTypeKind kind, ServiceDtoInfo dto = null, ServiceEnumInfo @enum = null, ServiceTypeInfo valueType = null)
+		private ServiceTypeInfo(ServiceTypeKind kind, ServiceDtoInfo? dto = null, ServiceEnumInfo? @enum = null, ServiceTypeInfo? valueType = null)
 		{
 			Kind = kind;
 			Dto = dto;
@@ -145,23 +130,23 @@ namespace Facility.Definition
 			ValueType = valueType;
 		}
 
-		private static string TryPrefixSuffix(string text, string prefix, string suffix)
+		private static string? TryPrefixSuffix(string text, string prefix, string suffix)
 		{
 			return text.StartsWith(prefix, StringComparison.Ordinal) && text.EndsWith(suffix, StringComparison.Ordinal) ?
 				text.Substring(prefix.Length, text.Length - prefix.Length - suffix.Length) : null;
 		}
 
-		static readonly Tuple<ServiceTypeKind, string>[] s_primitiveTuples =
+		private static readonly (ServiceTypeKind Kind, string Name)[] s_primitives =
 		{
-			Tuple.Create(ServiceTypeKind.String, "string"),
-			Tuple.Create(ServiceTypeKind.Boolean, "boolean"),
-			Tuple.Create(ServiceTypeKind.Double, "double"),
-			Tuple.Create(ServiceTypeKind.Int32, "int32"),
-			Tuple.Create(ServiceTypeKind.Int64, "int64"),
-			Tuple.Create(ServiceTypeKind.Decimal, "decimal"),
-			Tuple.Create(ServiceTypeKind.Bytes, "bytes"),
-			Tuple.Create(ServiceTypeKind.Object, "object"),
-			Tuple.Create(ServiceTypeKind.Error, "error"),
+			(ServiceTypeKind.String, "string"),
+			(ServiceTypeKind.Boolean, "boolean"),
+			(ServiceTypeKind.Double, "double"),
+			(ServiceTypeKind.Int32, "int32"),
+			(ServiceTypeKind.Int64, "int64"),
+			(ServiceTypeKind.Decimal, "decimal"),
+			(ServiceTypeKind.Bytes, "bytes"),
+			(ServiceTypeKind.Object, "object"),
+			(ServiceTypeKind.Error, "error"),
 		};
 	}
 }

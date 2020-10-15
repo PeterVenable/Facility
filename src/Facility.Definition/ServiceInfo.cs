@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace Facility.Definition
@@ -8,47 +7,40 @@ namespace Facility.Definition
 	/// <summary>
 	/// Information about a service from a definition.
 	/// </summary>
-	public sealed class ServiceInfo : IServiceMemberInfo
+	public sealed class ServiceInfo : ServiceMemberInfo
 	{
 		/// <summary>
 		/// Creates a service.
 		/// </summary>
-		public ServiceInfo(string name, IEnumerable<IServiceMemberInfo> members = null, IEnumerable<ServiceAttributeInfo> attributes = null, string summary = null, IEnumerable<string> remarks = null, NamedTextPosition position = null)
+		public ServiceInfo(string name, IEnumerable<ServiceMemberInfo> members, IEnumerable<ServiceAttributeInfo>? attributes = null, string? summary = null, IEnumerable<string>? remarks = null, params ServicePart[] parts)
+			: base(name, attributes, summary, remarks, parts)
 		{
-			if (name == null)
-				throw new ArgumentNullException(nameof(name));
-
-			Name = name;
 			Members = members.ToReadOnlyList();
-			Attributes = attributes.ToReadOnlyList();
-			Summary = summary ?? "";
-			Remarks = remarks.ToReadOnlyList();
-			Position = position;
 
-			ServiceDefinitionUtility.ValidateName(Name, Position);
+			ValidateName();
+			ValidateNoDuplicateNames(Members, "service member");
 
-			foreach (var member in Members)
+			var unsupportedMember = Members.FirstOrDefault(x => !(x is ServiceMethodInfo || x is ServiceDtoInfo || x is ServiceEnumInfo || x is ServiceErrorSetInfo));
+			if (unsupportedMember != null)
+				throw new InvalidOperationException($"Unsupported member type: {unsupportedMember.GetType()}");
+
+			m_membersByName = Members.GroupBy(x => x.Name).ToDictionary(x => x.First().Name, x => x.First());
+
+			m_typesByName = new Dictionary<string, ServiceTypeInfo>();
+			foreach (var fieldGroup in GetDescendants().OfType<ServiceFieldInfo>().GroupBy(x => x.TypeName))
 			{
-				if (!(member is ServiceMethodInfo) && !(member is ServiceDtoInfo) && !(member is ServiceEnumInfo) && !(member is ServiceErrorSetInfo))
-					throw new ServiceDefinitionException($"Unsupported member type '{member.GetType()}'.");
+				var type = ServiceTypeInfo.TryParse(fieldGroup.Key, FindMember);
+				if (type != null)
+					m_typesByName.Add(fieldGroup.Key, type);
+				else
+					AddValidationErrors(fieldGroup.Select(x => new ServiceDefinitionError($"Unknown field type '{x.TypeName}'.", x.GetPart(ServicePartKind.TypeName)?.Position)));
 			}
-
-			ServiceDefinitionUtility.ValidateNoDuplicateNames(Members, "service member");
-			m_membersByName = new ReadOnlyDictionary<string, IServiceMemberInfo>(Members.ToDictionary(x => x.Name, x => x));
-
-			foreach (var field in Methods.SelectMany(x => x.RequestFields.Concat(x.ResponseFields)).Concat(Dtos.SelectMany(x => x.Fields)))
-				GetFieldType(field);
 		}
-
-		/// <summary>
-		/// The service name.
-		/// </summary>
-		public string Name { get; }
 
 		/// <summary>
 		/// All of the service members..
 		/// </summary>
-		public IReadOnlyList<IServiceMemberInfo> Members { get; }
+		public IReadOnlyList<ServiceMemberInfo> Members { get; }
 
 		/// <summary>
 		/// The methods.
@@ -71,51 +63,101 @@ namespace Facility.Definition
 		public IReadOnlyList<ServiceErrorSetInfo> ErrorSets => Members.OfType<ServiceErrorSetInfo>().ToReadOnlyList();
 
 		/// <summary>
-		/// The service attributes.
-		/// </summary>
-		public IReadOnlyList<ServiceAttributeInfo> Attributes { get; }
-
-		/// <summary>
-		/// The service summary.
-		/// </summary>
-		public string Summary { get; }
-
-		/// <summary>
-		/// The service remarks.
-		/// </summary>
-		public IReadOnlyList<string> Remarks { get; }
-
-		/// <summary>
-		/// The position of the service.
-		/// </summary>
-		public NamedTextPosition Position { get; }
-
-		/// <summary>
 		/// Finds the member of the specified name.
 		/// </summary>
-		public IServiceMemberInfo FindMember(string name)
-		{
-			IServiceMemberInfo member;
-			m_membersByName.TryGetValue(name, out member);
-			return member;
-		}
-
-		/// <summary>
-		/// Gets the type of the specified name.
-		/// </summary>
-		public ServiceTypeInfo GetType(string typeName)
-		{
-			return ServiceTypeInfo.Parse(typeName, FindMember);
-		}
+		public ServiceMemberInfo? FindMember(string name) => m_membersByName.TryGetValue(name, out var member) ? member : null;
 
 		/// <summary>
 		/// Gets the field type for a field.
 		/// </summary>
-		public ServiceTypeInfo GetFieldType(ServiceFieldInfo field)
+		public ServiceTypeInfo? GetFieldType(ServiceFieldInfo field) =>
+			m_typesByName.TryGetValue(field.TypeName, out var type) ? type : ServiceTypeInfo.TryParse(field.TypeName, FindMember);
+
+		/// <summary>
+		/// Excludes a tag from the service.
+		/// </summary>
+		public ServiceInfo ExcludeTag(string tagName)
 		{
-			return ServiceTypeInfo.Parse(field.TypeName, FindMember, field.Position);
+			if (TryExcludeTag(tagName, out var newService, out var errors))
+				return newService;
+			else
+				throw new ServiceDefinitionException(errors);
 		}
 
-		readonly ReadOnlyDictionary<string, IServiceMemberInfo> m_membersByName;
+		/// <summary>
+		/// Attempts to exclude a tag from service.
+		/// </summary>
+		public bool TryExcludeTag(string tagName, out ServiceInfo service, out IReadOnlyList<ServiceDefinitionError> errors)
+		{
+			service = new ServiceInfo(
+				name: Name,
+				members: Members.Where(ShouldNotExclude).Select(DoExcludeTag),
+				attributes: Attributes,
+				summary: Summary,
+				remarks: Remarks,
+				parts: GetParts().ToArray());
+
+			errors = service.GetValidationErrors()
+				.Select(x => new ServiceDefinitionError($"{x.Message} ('{tagName}' tags are excluded.)", x.Position))
+				.ToList();
+
+			return errors.Count == 0;
+
+			bool ShouldNotExclude(ServiceElementWithAttributesInfo element) => !element.TagNames.Contains(tagName);
+
+			ServiceMemberInfo DoExcludeTag(ServiceMemberInfo member)
+			{
+				if (member is ServiceMethodInfo method)
+				{
+					return new ServiceMethodInfo(
+						name: method.Name,
+						requestFields: method.RequestFields.Where(ShouldNotExclude),
+						responseFields: method.ResponseFields.Where(ShouldNotExclude),
+						attributes: method.Attributes,
+						summary: method.Summary,
+						remarks: method.Remarks,
+						parts: method.GetParts().ToArray());
+				}
+				else if (member is ServiceDtoInfo dto)
+				{
+					return new ServiceDtoInfo(
+						name: dto.Name,
+						fields: dto.Fields.Where(ShouldNotExclude),
+						attributes: dto.Attributes,
+						summary: dto.Summary,
+						remarks: dto.Remarks,
+						parts: dto.GetParts().ToArray());
+				}
+				else if (member is ServiceEnumInfo @enum)
+				{
+					return new ServiceEnumInfo(
+						name: @enum.Name,
+						values: @enum.Values.Where(ShouldNotExclude),
+						attributes: @enum.Attributes,
+						summary: @enum.Summary,
+						remarks: @enum.Remarks,
+						parts: @enum.GetParts().ToArray());
+				}
+				else if (member is ServiceErrorSetInfo errorSet)
+				{
+					return new ServiceErrorSetInfo(
+						name: errorSet.Name,
+						errors: errorSet.Errors.Where(ShouldNotExclude),
+						attributes: errorSet.Attributes,
+						summary: errorSet.Summary,
+						remarks: errorSet.Remarks,
+						parts: errorSet.GetParts().ToArray());
+				}
+				else
+				{
+					return member;
+				}
+			}
+		}
+
+		private protected override IEnumerable<ServiceElementInfo> GetExtraChildrenCore() => Members;
+
+		private readonly Dictionary<string, ServiceMemberInfo> m_membersByName;
+		private readonly Dictionary<string, ServiceTypeInfo> m_typesByName;
 	}
 }

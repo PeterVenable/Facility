@@ -1,26 +1,29 @@
-﻿using NUnit.Framework;
+using FluentAssertions;
+using NUnit.Framework;
 
 namespace Facility.Definition.UnitTests
 {
-	public class ServiceMethodInfoTests
+	public class ServiceTextPositionTests
 	{
 		[Test]
-		public void InvalidNameThrows()
+		public void SourceNameOnly()
 		{
-			var position = new NamedTextPosition("source");
-			TestUtility.ThrowsServiceDefinitionException(() => new ServiceMethodInfo(name: "4u", position: position), position);
+			var position = new ServiceDefinitionPosition("source");
+			position.ToString().Should().Be("source");
 		}
 
-		[TestCase(true), TestCase(false)]
-		public void DuplicateFieldThrows(bool isRequest)
+		[Test]
+		public void LineNumberOnly()
 		{
-			var fields = new[]
-			{
-				new ServiceFieldInfo("why", "int32", position: new NamedTextPosition("source", 1)),
-				new ServiceFieldInfo("Why", "int32", position: new NamedTextPosition("source", 2)),
-			};
-			TestUtility.ThrowsServiceDefinitionException(
-				() => new ServiceMethodInfo(name: "x", requestFields: isRequest ? fields : null, responseFields: isRequest ? null : fields), fields[1].Position);
+			var position = new ServiceDefinitionPosition("source", 3);
+			position.ToString().Should().Be("source(3)");
+		}
+
+		[Test]
+		public void FullPosition()
+		{
+			var position = new ServiceDefinitionPosition("source", 3, 14);
+			position.ToString().Should().Be("source(3,14)");
 		}
 	}
 }

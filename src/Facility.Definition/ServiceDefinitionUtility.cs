@@ -1,4 +1,3 @@
-﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -12,113 +11,30 @@ namespace Facility.Definition
 	public static class ServiceDefinitionUtility
 	{
 		/// <summary>
-		/// Attempts to determine the format of the service definition.
+		/// Creates an error for a duplicate attribute.
 		/// </summary>
-		public static ServiceDefinitionFormat? DetectFormat(NamedText namedText)
-		{
-			if (namedText.Name.EndsWith(".fsd", StringComparison.OrdinalIgnoreCase))
-				return ServiceDefinitionFormat.Fsd;
-
-			if (namedText.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
-				namedText.Name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) ||
-				namedText.Name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
-			{
-				return ServiceDefinitionFormat.Swagger;
-			}
-
-			return null;
-		}
+		public static ServiceDefinitionError CreateDuplicateAttributeError(ServiceAttributeInfo attribute) =>
+			new ServiceDefinitionError($"'{attribute.Name}' attribute is duplicated.", attribute.Position);
 
 		/// <summary>
-		/// Returns the attribute with the specified name.
+		/// Creates an error for an unexpected attribute parameter.
 		/// </summary>
-		/// <remarks>Throws a ServiceDefinitionException if the attribute is duplicated.</remarks>
-		public static ServiceAttributeInfo TryGetAttribute(this IServiceElementInfo element, string name)
-		{
-			var attributes = element?.Attributes;
-			if (attributes == null)
-				return null;
-
-			var matchingAttributes = attributes.Where(x => x.Name == name).ToList();
-			if (matchingAttributes.Count > 1)
-				throw new ServiceDefinitionException($"'{name}' attribute is duplicated.", matchingAttributes[1].Position);
-
-			return matchingAttributes.FirstOrDefault();
-		}
+		public static ServiceDefinitionError CreateUnexpectedAttributeError(ServiceAttributeInfo attribute) =>
+			new ServiceDefinitionError($"Unexpected '{attribute.Name}' attribute.", attribute.Position);
 
 		/// <summary>
-		/// Returns the attribute parameter with the specified name.
+		/// Creates an error for an unexpected attribute parameter.
 		/// </summary>
-		public static ServiceAttributeParameterInfo TryGetParameter(this ServiceAttributeInfo attribute, string name)
-		{
-			return attribute?.Parameters?.FirstOrDefault(x => x.Name == name);
-		}
+		public static ServiceDefinitionError CreateUnexpectedAttributeParameterError(string attributeName, ServiceAttributeParameterInfo parameter) =>
+			new ServiceDefinitionError($"Unexpected '{attributeName}' parameter '{parameter.Name}'.", parameter.Position);
 
 		/// <summary>
-		/// Returns the value of the attribute parameter with the specified name.
+		/// Returns true if the name is a valid service element name.
 		/// </summary>
-		public static string TryGetParameterValue(this ServiceAttributeInfo attribute, string name)
-		{
-			return attribute.TryGetParameter(name)?.Value;
-		}
+		public static bool IsValidName(string? name) => name != null && s_validNameRegex.IsMatch(name);
 
-		/// <summary>
-		/// Returns true if the element has the 'obsolete' attribute.
-		/// </summary>
-		public static bool IsObsolete(this IServiceElementInfo element)
-		{
-			return element.TryGetObsoleteAttribute() != null;
-		}
+		internal static IReadOnlyList<T> ToReadOnlyList<T>(this IEnumerable<T>? items) => new ReadOnlyCollection<T>((items ?? Enumerable.Empty<T>()).ToList());
 
-		/// <summary>
-		/// Returns the obsolete message for an element with the 'obsolete' attribute.
-		/// </summary>
-		/// <remarks>Use <see cref="IsObsolete"/> to determine if the element is obsolete.</remarks>
-		public static string TryGetObsoleteMessage(this IServiceElementInfo element)
-		{
-			return element.TryGetObsoleteAttribute()?.TryGetParameterValue("message");
-		}
-
-		/// <summary>
-		/// Returns true if the name is a valid service member name.
-		/// </summary>
-		public static bool IsValidName(string name)
-		{
-			return name != null && s_validNameRegex.IsMatch(name);
-		}
-
-		internal static void ValidateName(string name, NamedTextPosition position)
-		{
-			if (!IsValidName(name))
-				throw new ServiceDefinitionException($"Invalid name '{name}'.", position);
-		}
-
-		internal static void ValidateTypeName(string name, NamedTextPosition position)
-		{
-			ServiceTypeInfo.Parse(name, x => s_validNameRegex.IsMatch(x) ? new ServiceDtoInfo(x) : null, position);
-		}
-
-		internal static void ValidateNoDuplicateNames(IEnumerable<IServiceNamedInfo> infos, string description)
-		{
-			var duplicate = infos
-				.GroupBy(x => x.Name.ToLowerInvariant())
-				.Where(x => x.Count() != 1)
-				.Select(x => x.Skip(1).First())
-				.FirstOrDefault();
-			if (duplicate != null)
-				throw new ServiceDefinitionException($"Duplicate {description}: {duplicate.Name}", duplicate.Position);
-		}
-
-		internal static IReadOnlyList<T> ToReadOnlyList<T>(this IEnumerable<T> items)
-		{
-			return new ReadOnlyCollection<T>((items ?? Enumerable.Empty<T>()).ToList());
-		}
-
-		private static ServiceAttributeInfo TryGetObsoleteAttribute(this IServiceElementInfo element)
-		{
-			return element.TryGetAttribute("obsolete");
-		}
-
-		static readonly Regex s_validNameRegex = new Regex(@"^[a-zA-Z_][a-zA-Z0-9_]*$");
+		private static readonly Regex s_validNameRegex = new Regex(@"^[a-zA-Z_][a-zA-Z0-9_]*$");
 	}
 }
